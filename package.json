@@ -1,7 +1,7 @@
 {
   "name": "@theyahia/tgstat-mcp",
-  "version": "1.0.0",
-  "description": "MCP server for TGStat API — Telegram channel analytics, search, posts, stats, mentions, comparison. 8 tools.",
+  "version": "1.0.1",
+  "description": "MCP server for TGStat — Telegram channel analytics, search, stats (Russia)",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -51,7 +51,8 @@
     "telegram",
     "analytics",
     "marketing",
-    "typescript"
+    "typescript",
+    "api"
   ],
   "license": "MIT",
   "repository": {
