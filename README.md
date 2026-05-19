@@ -1,3 +1,5 @@
+> 📦 Part of **[WWmcp — Emerging Markets MCP](https://github.com/theYahia/WWmcp)** — 114 MCP servers for non-Western APIs (Brazil/MENA/Gulf/SE Asia/Africa/CIS).
+
 # @theyahia/tgstat-mcp
 
 MCP-сервер для TGStat API — аналитика Telegram-каналов, поиск, посты, статистика, упоминания, сравнение. 8 инструментов.
@@ -57,6 +59,19 @@ claude mcp add tgstat -e TGSTAT_TOKEN=ваш_токен -- npx -y @theyahia/tgst
 Кто упоминает канал @thebell_io?
 ```
 
+## 🚀 Demo prompts
+
+> **Use case (RU):** "Найди топ-10 Telegram-каналов про MCP за последние 30 дней, верни ER и подписки"
+
+🤖 **Pairs well with:**
+- [`@theyahia/vk-ads-mcp`](https://github.com/theYahia/vk-ads-mcp)
+- [`@theyahia/sendpulse-mcp`](https://github.com/theYahia/sendpulse-mcp)
+- [`@theyahia/unisender-mcp`](https://github.com/theYahia/unisender-mcp)
+
 ## Лицензия
 
 MIT
+
+---
+
+⭐ **Star if you build with TGStat** — helps other devs find this server.
