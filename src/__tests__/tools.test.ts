@@ -1,180 +1,301 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerChannelTools } from "../tools/channels.js";
+import { registerPostTools } from "../tools/posts.js";
+import { registerMetricTools } from "../tools/metrics.js";
+import { registerWordTools } from "../tools/words.js";
+import { registerDatabaseTools } from "../tools/database.js";
+import { registerUsageTools } from "../tools/usage.js";
+import { toUnix } from "../lib/dates.js";
+import { optionalDate } from "../lib/schemas.js";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
+process.env.TGSTAT_TOKEN = "test-token";
 
-process.env.TGSTAT_TOKEN = "test-tgstat-token-123";
+type ToolResult = { content: { text: string }[]; isError?: boolean };
+type ToolCb = (params: Record<string, unknown>) => Promise<ToolResult>;
 
-function mockOk(data: unknown) {
+/** Capture the callbacks a register function wires up, so handlers can be invoked directly. */
+function collect(register: (server: McpServer) => void): Map<string, ToolCb> {
+  const tools = new Map<string, ToolCb>();
+  const fake = {
+    tool: (name: string, _desc: string, _schema: unknown, cb: ToolCb) => tools.set(name, cb),
+  };
+  register(fake as unknown as McpServer);
+  return tools;
+}
+
+const channels = collect(registerChannelTools);
+const posts = collect(registerPostTools);
+const metrics = collect(registerMetricTools);
+const words = collect(registerWordTools);
+const database = collect(registerDatabaseTools);
+const usage = collect(registerUsageTools);
+
+function ok(response: unknown) {
   return {
     ok: true,
     status: 200,
-    json: () => Promise.resolve(data),
-    text: () => Promise.resolve(JSON.stringify(data)),
+    headers: { get: () => null },
+    json: () => Promise.resolve({ status: "ok", response }),
   };
 }
-
-function mockError(status: number, body = "") {
+function envErr(message: string) {
   return {
-    ok: false,
-    status,
-    statusText: "Error",
-    text: () => Promise.resolve(body),
+    ok: true,
+    status: 200,
+    headers: { get: () => null },
+    json: () => Promise.resolve({ status: "error", error: message }),
   };
 }
+function lastUrl(): string {
+  return mockFetch.mock.calls.at(-1)![0] as string;
+}
+function parse(res: ToolResult): any {
+  return JSON.parse(res.content[0].text);
+}
+function unix(date: string): number {
+  return Math.floor(Date.parse(`${date}T00:00:00Z`) / 1000);
+}
 
-// ─── search_channels ───
+beforeEach(() => mockFetch.mockReset());
+
+describe("registration", () => {
+  it("registers 20 tools across all groups", () => {
+    expect(channels.size + posts.size + metrics.size + words.size + database.size + usage.size).toBe(20);
+  });
+});
 
 describe("search_channels", () => {
-  beforeEach(() => mockFetch.mockReset());
-
-  it("returns search results", async () => {
-    const { handleSearchChannels } = await import("../tools/channels.js");
-    const payload = { status: "ok", response: { items: [{ id: "123", title: "Tech News", participants_count: 50000 }], count: 1 } };
-    mockFetch.mockResolvedValueOnce(mockOk(payload));
-
-    const result = JSON.parse(await handleSearchChannels({ query: "tech" }));
-    expect(result.response.items).toHaveLength(1);
-    expect(result.response.items[0].title).toBe("Tech News");
-
-    const url = mockFetch.mock.calls[0][0] as string;
+  it("maps params, shapes results, drops noisy fields", async () => {
+    mockFetch.mockResolvedValueOnce(
+      ok({ count: 1, items: [{ id: "1", username: "tech", title: "Tech", participants_count: 5000, image640: "noise" }] }),
+    );
+    const res = await channels.get("search_channels")!({
+      query: "tech",
+      peer_type: "channel",
+      search_by_description: false,
+      limit: 20,
+    });
+    const data = parse(res);
+    expect(data.items).toHaveLength(1);
+    expect(data.items[0].title).toBe("Tech");
+    expect(data.items[0].image640).toBeUndefined();
+    const url = lastUrl();
     expect(url).toContain("/channels/search");
     expect(url).toContain("q=tech");
+    expect(url).toContain("peer_type=channel");
+    expect(url).toContain("limit=20");
   });
 
-  it("passes language filter", async () => {
-    const { handleSearchChannels } = await import("../tools/channels.js");
-    mockFetch.mockResolvedValueOnce(mockOk({ status: "ok", response: { items: [], count: 0 } }));
+  it("returns no_results on empty", async () => {
+    mockFetch.mockResolvedValueOnce(ok({ count: 0, items: [] }));
+    const res = await channels.get("search_channels")!({
+      query: "zzz",
+      peer_type: "channel",
+      search_by_description: false,
+      limit: 20,
+    });
+    expect(parse(res).status).toBe("no_results");
+  });
 
-    await handleSearchChannels({ query: "маркетинг", language: "ru" });
-
-    const url = mockFetch.mock.calls[0][0] as string;
-    expect(url).toContain("language=ru");
+  it("passes the language filter", async () => {
+    mockFetch.mockResolvedValueOnce(ok({ items: [{ id: "1" }] }));
+    await channels.get("search_channels")!({
+      query: "маркетинг",
+      language: "ru",
+      peer_type: "channel",
+      search_by_description: false,
+      limit: 20,
+    });
+    expect(lastUrl()).toContain("language=ru");
   });
 });
-
-// ─── get_channel ───
 
 describe("get_channel", () => {
-  beforeEach(() => mockFetch.mockReset());
+  it("shapes the channel and uses channelId", async () => {
+    mockFetch.mockResolvedValueOnce(
+      ok({ id: "456", username: "x", title: "Ch", participants_count: 10000, image100: "noise" }),
+    );
+    const res = await channels.get("get_channel")!({ channel_id: "@x" });
+    const data = parse(res);
+    expect(data.participants_count).toBe(10000);
+    expect(data.image100).toBeUndefined();
+    expect(lastUrl()).toContain("channelId=%40x");
+  });
 
-  it("fetches channel by ID", async () => {
-    const { handleGetChannel } = await import("../tools/channels.js");
-    const payload = { status: "ok", response: { id: "456", title: "My Channel", participants_count: 10000 } };
-    mockFetch.mockResolvedValueOnce(mockOk(payload));
-
-    const result = JSON.parse(await handleGetChannel({ channel_id: "@mychannel" }));
-    expect(result.response.participants_count).toBe(10000);
-
-    const url = mockFetch.mock.calls[0][0] as string;
-    expect(url).toContain("channelId=%40mychannel");
+  it("propagates a logical API error as isError", async () => {
+    mockFetch.mockResolvedValueOnce(envErr("invalid channel"));
+    const res = await channels.get("get_channel")!({ channel_id: "@bad" });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain("invalid channel");
   });
 });
 
-// ─── get_channel_posts ───
-
-describe("get_channel_posts", () => {
-  beforeEach(() => mockFetch.mockReset());
-
-  it("fetches posts with limit", async () => {
-    const { handleGetChannelPosts } = await import("../tools/posts.js");
-    const payload = { status: "ok", response: { items: [{ id: "1/100", views: 5000 }], count: 1 } };
-    mockFetch.mockResolvedValueOnce(mockOk(payload));
-
-    const result = JSON.parse(await handleGetChannelPosts({ channel_id: "@test", limit: 10 }));
-    expect(result.response.items).toHaveLength(1);
-
-    const url = mockFetch.mock.calls[0][0] as string;
-    expect(url).toContain("limit=10");
+describe("compare_channels", () => {
+  it("uses /channels/stat per channel and sorts by subscribers", async () => {
+    mockFetch.mockResolvedValueOnce(ok({ id: "1", participants_count: 1000, err_percent: 10 }));
+    mockFetch.mockResolvedValueOnce(ok({ id: "2", participants_count: 3000, err_percent: 20 }));
+    const res = await channels.get("compare_channels")!({ channel_ids: ["@a", "@b"] });
+    const data = parse(res);
+    expect(data.channels).toHaveLength(2);
+    expect(data.channels[0].channel).toBe("@b"); // sorted desc by participants
+    expect(data.channels[0].metrics.participants_count).toBe(3000);
+    for (const call of mockFetch.mock.calls) expect(call[0]).toContain("/channels/stat");
   });
 });
 
-// ─── get_post ───
-
-describe("get_post", () => {
-  beforeEach(() => mockFetch.mockReset());
-
-  it("fetches post details", async () => {
-    const { handleGetPost } = await import("../tools/posts.js");
-    mockFetch.mockResolvedValueOnce(mockOk({ status: "ok", response: { id: "123/456", views: 10000, forwards: 50 } }));
-
-    const result = JSON.parse(await handleGetPost({ post_id: "123/456" }));
-    expect(result.response.views).toBe(10000);
-    expect(result.response.forwards).toBe(50);
+describe("get_channel_mentions", () => {
+  it("tolerates a list-shaped response", async () => {
+    mockFetch.mockResolvedValueOnce(ok({ items: [{ id: "1/2", views: 5, text: "hi" }] }));
+    const res = await channels.get("get_channel_mentions")!({ channel_id: "@x", limit: 50 });
+    expect(parse(res).items).toHaveLength(1);
+    expect(lastUrl()).toContain("/channels/mentions");
   });
 });
 
-// ─── search_posts ───
-
-describe("search_posts", () => {
-  beforeEach(() => mockFetch.mockReset());
-
-  it("searches posts with date range", async () => {
-    const { handleSearchPosts } = await import("../tools/posts.js");
-    mockFetch.mockResolvedValueOnce(mockOk({ status: "ok", response: { items: [], count: 0 } }));
-
-    await handleSearchPosts({
-      query: "AI новости",
+describe("search_posts (bug fixes)", () => {
+  it("converts dates to unix and drops the removed `channels` param", async () => {
+    mockFetch.mockResolvedValueOnce(ok({ count: 0, items: [] }));
+    await posts.get("search_posts")!({
+      query: "AI",
+      peer_type: "all",
+      hide_forwards: false,
+      extended: false,
+      limit: 20,
       date_from: "2026-01-01",
       date_to: "2026-01-31",
     });
-
-    const url = mockFetch.mock.calls[0][0] as string;
+    const url = lastUrl();
+    expect(url).toContain(`startDate=${unix("2026-01-01")}`);
+    expect(url).not.toContain("startDate=2026-01-01"); // not the raw YYYY-MM-DD
+    expect(url).not.toContain("channels=");
+    expect(url).toContain("peerType=all");
     expect(url).toContain("/posts/search");
-    expect(url).toContain("startDate=2026-01-01");
   });
 });
 
-// ─── compare_channels ───
-
-describe("compare_channels", () => {
-  beforeEach(() => mockFetch.mockReset());
-
-  it("fetches multiple channels for comparison", async () => {
-    const { handleCompareChannels } = await import("../tools/channels.js");
-    mockFetch.mockResolvedValueOnce(mockOk({ status: "ok", response: { id: "1", participants_count: 1000 } }));
-    mockFetch.mockResolvedValueOnce(mockOk({ status: "ok", response: { id: "2", participants_count: 2000 } }));
-
-    const result = JSON.parse(await handleCompareChannels({ channel_ids: ["@ch1", "@ch2"] }));
-    expect(result.channels).toHaveLength(2);
+describe("get_channel_posts", () => {
+  it("sends startTime as unix and shapes/truncates posts", async () => {
+    mockFetch.mockResolvedValueOnce(
+      ok({ count: 1, total_count: 1, items: [{ id: "1/100", views: 5000, text: "x".repeat(400), date: 1767225600 }] }),
+    );
+    const res = await posts.get("get_channel_posts")!({
+      channel_id: "@t",
+      limit: 10,
+      offset: 0,
+      hide_forwards: false,
+      extended: false,
+      start_date: "2026-01-01",
+    });
+    const data = parse(res);
+    expect(data.items).toHaveLength(1);
+    expect((data.items[0].text as string).length).toBeLessThanOrEqual(281); // truncated to 280 + ellipsis
+    expect(typeof data.items[0].date).toBe("string"); // unix → ISO
+    const url = lastUrl();
+    expect(url).toContain("limit=10");
+    expect(url).toContain(`startTime=${unix("2026-01-01")}`);
   });
 });
 
-// ─── Error handling ───
-
-describe("error handling", () => {
-  beforeEach(() => mockFetch.mockReset());
-
-  it("throws on missing token", async () => {
-    const saved = process.env.TGSTAT_TOKEN;
-    delete process.env.TGSTAT_TOKEN;
-
-    const { apiGet } = await import("../client.js");
-    await expect(apiGet("/test")).rejects.toThrow("TGSTAT_TOKEN");
-
-    process.env.TGSTAT_TOKEN = saved;
-  });
-
-  it("throws on HTTP 4xx errors", async () => {
-    const { handleSearchChannels } = await import("../tools/channels.js");
-    mockFetch.mockResolvedValueOnce(mockError(429, "Rate limit"));
-
-    await expect(handleSearchChannels({ query: "test" })).rejects.toThrow("HTTP 429");
+describe("get_post", () => {
+  it("shapes the post and uses postId", async () => {
+    mockFetch.mockResolvedValueOnce(ok({ id: "123/456", views: 10000, forwards: 50, date: 1767225600 }));
+    const res = await posts.get("get_post")!({ post_id: "123/456" });
+    const data = parse(res);
+    expect(data.views).toBe(10000);
+    expect(data.forwards).toBe(50);
+    expect(lastUrl()).toContain("postId=123%2F456");
   });
 });
 
-// ─── Auth token ───
+describe("metrics", () => {
+  it("get_channel_subscribers sends group and unix range", async () => {
+    mockFetch.mockResolvedValueOnce(ok([{ period: "2026-01-01", participants_count: 100 }]));
+    const res = await metrics.get("get_channel_subscribers")!({
+      channel_id: "@x",
+      group: "week",
+      start_date: "2026-01-01",
+    });
+    expect(parse(res)).toHaveLength(1);
+    const url = lastUrl();
+    expect(url).toContain("/channels/subscribers");
+    expect(url).toContain("group=week");
+    expect(url).toContain(`startDate=${unix("2026-01-01")}`);
+  });
 
-describe("auth token", () => {
-  beforeEach(() => mockFetch.mockReset());
+  it("get_channel_forwards hits /channels/forwards with a tolerant list", async () => {
+    mockFetch.mockResolvedValueOnce(ok({ items: [{ id: "1/2", views: 9 }] }));
+    const res = await metrics.get("get_channel_forwards")!({ channel_id: "@x", limit: 50 });
+    expect(parse(res).items).toHaveLength(1);
+    expect(lastUrl()).toContain("/channels/forwards");
+  });
+});
 
-  it("sends token as query parameter", async () => {
-    const { handleSearchChannels } = await import("../tools/channels.js");
-    mockFetch.mockResolvedValueOnce(mockOk({ status: "ok", response: { items: [] } }));
+describe("words", () => {
+  it("get_word_mentions hits words/mentions-by-period with peerType + group", async () => {
+    mockFetch.mockResolvedValueOnce(ok([{ period: "2026-01", mentions_count: 10, views_count: 1000 }]));
+    const res = await words.get("get_word_mentions")!({
+      query: "AI",
+      peer_type: "all",
+      group: "month",
+      hide_forwards: false,
+      strong_search: false,
+    });
+    expect(parse(res)).toHaveLength(1);
+    const url = lastUrl();
+    expect(url).toContain("/words/mentions-by-period");
+    expect(url).toContain("q=AI");
+    expect(url).toContain("peerType=all");
+    expect(url).toContain("group=month");
+  });
+});
 
-    await handleSearchChannels({ query: "test" });
+describe("database", () => {
+  it("list_categories sends lang", async () => {
+    mockFetch.mockResolvedValueOnce(ok([{ code: "tech", name: "Технологии" }]));
+    const res = await database.get("list_categories")!({ lang: "ru" });
+    expect(parse(res)[0].code).toBe("tech");
+    expect(lastUrl()).toContain("/database/categories");
+    expect(lastUrl()).toContain("lang=ru");
+  });
+});
 
-    const url = mockFetch.mock.calls[0][0] as string;
-    expect(url).toContain("token=test-tgstat-token-123");
+describe("usage", () => {
+  it("get_usage hits usage/stat", async () => {
+    mockFetch.mockResolvedValueOnce(ok([{ serviceKey: "api_stat_l", spentRequests: "100/400000" }]));
+    const res = await usage.get("get_usage")!({});
+    expect(parse(res)[0].serviceKey).toBe("api_stat_l");
+    expect(lastUrl()).toContain("/usage/stat");
+  });
+});
+
+describe("toUnix", () => {
+  it("converts YYYY-MM-DD to unix seconds (UTC midnight)", () => {
+    expect(toUnix("2026-01-01")).toBe(unix("2026-01-01"));
+  });
+  it("snaps to end of day with endOfDay=true", () => {
+    expect(toUnix("2026-01-01", true)).toBe(Math.floor(Date.parse("2026-01-01T23:59:59Z") / 1000));
+  });
+  it("returns undefined for undefined input", () => {
+    expect(toUnix(undefined)).toBeUndefined();
+  });
+});
+
+describe("optionalDate schema", () => {
+  const schema = optionalDate("test");
+
+  it("accepts a valid date", () => {
+    expect(schema.safeParse("2026-01-31").success).toBe(true);
+  });
+  it("accepts undefined (optional)", () => {
+    expect(schema.safeParse(undefined).success).toBe(true);
+  });
+  it("rejects a wrong format", () => {
+    expect(schema.safeParse("31-01-2026").success).toBe(false);
+  });
+  it("rejects an impossible calendar date (so toUnix never throws at runtime)", () => {
+    expect(schema.safeParse("2026-13-01").success).toBe(false);
   });
 });

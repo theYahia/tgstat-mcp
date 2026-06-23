@@ -1,7 +1,7 @@
 {
   "name": "@theyahia/tgstat-mcp",
-  "version": "1.0.1",
-  "description": "MCP server for TGStat — Telegram channel analytics, search, stats (Russia)",
+  "version": "2.0.0",
+  "description": "MCP server for TGStat — Telegram channel analytics, search, stats (Russia). 20 tools.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -14,9 +14,11 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "build": "tsc",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
