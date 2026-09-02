@@ -1,8 +1,8 @@
-# @theyahia/tgstat-mcp
+# MCP-сервер для TGStat — аналитика Telegram-каналов через ИИ
 
 > 🌍 Часть **[WWmcp](https://github.com/theYahia/WWmcp)** — коллекции из 46 MCP-серверов для развивающихся рынков (Россия, СНГ, MENA, Gulf, SE Asia, Africa). Единственная коллекция MCP, покрывающая не-западные API.
 
-MCP-сервер для **TGStat API** — аналитика Telegram-каналов: поиск каналов и постов, статистика, динамика подписчиков и охватов, ERR, упоминания, тренды ключевых слов, сравнение каналов. **20 инструментов.**
+Если вы искали, как выгрузить статистику Telegram-канала не копируя её руками из TGStat, сравнить каналы перед закупкой рекламы или отследить упоминания бренда — это оно. 20 инструментов: поиск каналов и постов, динамика подписчиков и охватов, ERR, упоминания, тренды ключевых слов, сравнение каналов. Спрашиваете «сравни эти три канала по ERR за месяц» — получаете таблицу, а не десять вкладок.
 
 [![npm](https://img.shields.io/npm/v/@theyahia/tgstat-mcp)](https://www.npmjs.com/package/@theyahia/tgstat-mcp)
 [![CI](https://github.com/theYahia/tgstat-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/theYahia/tgstat-mcp/actions/workflows/ci.yml)
