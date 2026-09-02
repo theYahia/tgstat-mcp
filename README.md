@@ -1,6 +1,6 @@
 # @theyahia/tgstat-mcp
 
-> 🌍 Часть **[WWmcp](https://github.com/theYahia/WWmcp)** — коллекции из 114 MCP-серверов для развивающихся рынков (Россия, СНГ, MENA, Gulf, SE Asia, Africa). Единственная коллекция MCP, покрывающая не-западные API.
+> 🌍 Часть **[WWmcp](https://github.com/theYahia/WWmcp)** — коллекции из 46 MCP-серверов для развивающихся рынков (Россия, СНГ, MENA, Gulf, SE Asia, Africa). Единственная коллекция MCP, покрывающая не-западные API.
 
 MCP-сервер для **TGStat API** — аналитика Telegram-каналов: поиск каналов и постов, статистика, динамика подписчиков и охватов, ERR, упоминания, тренды ключевых слов, сравнение каналов. **20 инструментов.**
 
@@ -132,3 +132,7 @@ npm test           # vitest
 ## Лицензия
 
 MIT
+
+---
+
+Часть [WWmcp](https://github.com/theYahia/WWmcp) · Telegram: [@vhodvai](https://t.me/vhodvai)
